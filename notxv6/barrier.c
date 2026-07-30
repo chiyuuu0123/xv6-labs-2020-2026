@@ -5,7 +5,6 @@
 #include <pthread.h>
 
 static int nthread = 1;
-static int round = 0;
 
 struct barrier {
   pthread_mutex_t barrier_mutex;
@@ -20,17 +19,28 @@ barrier_init(void)
   assert(pthread_mutex_init(&bstate.barrier_mutex, NULL) == 0);
   assert(pthread_cond_init(&bstate.barrier_cond, NULL) == 0);
   bstate.nthread = 0;
+  bstate.round = 0;
 }
 
 static void 
 barrier()
 {
-  // YOUR CODE HERE
-  //
-  // Block until all threads have called barrier() and
-  // then increment bstate.round.
-  //
-  
+  pthread_mutex_lock(&bstate.barrier_mutex);
+  int this_round = bstate.round;
+  bstate.nthread++;
+
+  if(bstate.nthread == nthread){
+    // 最后到达者推进轮次并一次唤醒本轮全部等待线程。
+    bstate.nthread = 0;
+    bstate.round++;
+    pthread_cond_broadcast(&bstate.barrier_cond);
+  } else {
+    // 条件变量可能虚假唤醒，必须循环检查当前轮次是否真的结束。
+    while(this_round == bstate.round)
+      pthread_cond_wait(&bstate.barrier_cond, &bstate.barrier_mutex);
+  }
+
+  pthread_mutex_unlock(&bstate.barrier_mutex);
 }
 
 static void *
