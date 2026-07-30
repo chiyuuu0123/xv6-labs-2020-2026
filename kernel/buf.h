@@ -5,8 +5,8 @@ struct buf {
   uint blockno;
   struct sleeplock lock;
   uint refcnt;
+  uint timestamp; // refcnt 降为零时记录最近一次释放顺序
   struct buf *prev; // LRU cache list
   struct buf *next;
   uchar data[BSIZE];
 };
-
