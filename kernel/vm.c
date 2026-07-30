@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -18,33 +20,61 @@ extern char trampoline[]; // trampoline.S
 /*
  * create a direct-map page table for the kernel.
  */
-void
-kvminit()
+pagetable_t
+kvmmake(void)
 {
-  kernel_pagetable = (pagetable_t) kalloc();
-  memset(kernel_pagetable, 0, PGSIZE);
+  pagetable_t pagetable = (pagetable_t)kalloc();
+  if(pagetable == 0)
+    return 0;
+  memset(pagetable, 0, PGSIZE);
 
   // uart registers
-  kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
+  if(mappages(pagetable, UART0, PGSIZE, UART0, PTE_R | PTE_W) != 0)
+    goto bad;
 
   // virtio mmio disk interface
-  kvmmap(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+  if(mappages(pagetable, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W) != 0)
+    goto bad;
 
-  // CLINT
-  kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
-
-  // PLIC
-  kvmmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+  // PLIC 是进程用户地址与内核固定映射之间的最低边界。
+  if(mappages(pagetable, PLIC, 0x400000, PLIC, PTE_R | PTE_W) != 0)
+    goto bad;
 
   // map kernel text executable and read-only.
-  kvmmap(KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+  if(mappages(pagetable, KERNBASE, (uint64)etext-KERNBASE,
+              KERNBASE, PTE_R | PTE_X) != 0)
+    goto bad;
 
   // map kernel data and the physical RAM we'll make use of.
-  kvmmap((uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+  if(mappages(pagetable, (uint64)etext, PHYSTOP-(uint64)etext,
+              (uint64)etext, PTE_R | PTE_W) != 0)
+    goto bad;
 
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel.
-  kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+  if(mappages(pagetable, TRAMPOLINE, PGSIZE,
+              (uint64)trampoline, PTE_R | PTE_X) != 0)
+    goto bad;
+
+  return pagetable;
+
+ bad:
+  // 此处只释放页表页；设备和内核叶子映射指向的物理页不属于页表。
+  kvmfree(pagetable);
+  return 0;
+}
+
+void
+kvminit()
+{
+  kernel_pagetable = kvmmake();
+  if(kernel_pagetable == 0)
+    panic("kvminit");
+
+  // 全局页表供调度器空闲阶段使用；CLINT 仅保留在这张启动页表中。
+  if(mappages(kernel_pagetable, CLINT, 0x10000,
+              CLINT, PTE_R | PTE_W) != 0)
+    panic("kvminit CLINT");
 }
 
 // Switch h/w page table register to the kernel's page table,
@@ -131,8 +161,13 @@ kvmpa(uint64 va)
   uint64 off = va % PGSIZE;
   pte_t *pte;
   uint64 pa;
-  
-  pte = walk(kernel_pagetable, va, 0);
+  pagetable_t pagetable = kernel_pagetable;
+  struct proc *p = myproc();
+
+  // 进程运行期间内核栈只存在于该进程的私有内核页表中。
+  if(p)
+    pagetable = p->kpagetable;
+  pte = walk(pagetable, va, 0);
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
@@ -289,6 +324,46 @@ freewalk(pagetable_t pagetable)
   kfree((void*)pagetable);
 }
 
+// 释放内核页表自身的各级页表页，但不释放叶子映射指向的设备、内核或用户物理页。
+void
+kvmfree(pagetable_t pagetable)
+{
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0)
+      kvmfree((pagetable_t)PTE2PA(pte));
+    pagetable[i] = 0;
+  }
+  kfree((void *)pagetable);
+}
+
+// 将用户页以相同虚拟地址映射进进程内核页表，并去掉 PTE_U 以允许 S 模式访问。
+int
+uvm2kvm(pagetable_t user, pagetable_t kernel, uint64 oldsz, uint64 newsz)
+{
+  uint64 start = PGROUNDUP(oldsz);
+  uint64 a;
+  pte_t *pte;
+
+  if(newsz > PLIC)
+    return -1;
+
+  for(a = start; a < newsz; a += PGSIZE){
+    if((pte = walk(user, a, 0)) == 0 || (*pte & PTE_V) == 0)
+      goto err;
+    uint64 pa = PTE2PA(*pte);
+    uint flags = PTE_FLAGS(*pte) & ~PTE_U;
+    if(mappages(kernel, a, PGSIZE, pa, flags) != 0)
+      goto err;
+  }
+  return 0;
+
+ err:
+  if(a > start)
+    uvmunmap(kernel, start, (a - start) / PGSIZE, 0);
+  return -1;
+}
+
 // Free user memory pages,
 // then free page-table pages.
 void
@@ -379,23 +454,8 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
-  uint64 n, va0, pa0;
-
-  while(len > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > len)
-      n = len;
-    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
-
-    len -= n;
-    dst += n;
-    srcva = va0 + PGSIZE;
-  }
-  return 0;
+  // 用户页已映射进当前进程的内核页表，可直接按用户虚拟地址访问。
+  return copyin_new(pagetable, dst, srcva, len);
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -405,38 +465,30 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
-  uint64 n, va0, pa0;
-  int got_null = 0;
+  return copyinstr_new(pagetable, dst, srcva, max);
+}
 
-  while(got_null == 0 && max > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > max)
-      n = max;
+static void
+vmprintwalk(pagetable_t pagetable, int depth)
+{
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if((pte & PTE_V) == 0)
+      continue;
 
-    char *p = (char *) (pa0 + (srcva - va0));
-    while(n > 0){
-      if(*p == '\0'){
-        *dst = '\0';
-        got_null = 1;
-        break;
-      } else {
-        *dst = *p;
-      }
-      --n;
-      --max;
-      p++;
-      dst++;
-    }
+    for(int level = 0; level < depth; level++)
+      printf(" ..");
+    printf("%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
 
-    srcva = va0 + PGSIZE;
+    // 没有 R/W/X 权限的有效项指向下一级页表，而不是最终物理页。
+    if((pte & (PTE_R | PTE_W | PTE_X)) == 0)
+      vmprintwalk((pagetable_t)PTE2PA(pte), depth + 1);
   }
-  if(got_null){
-    return 0;
-  } else {
-    return -1;
-  }
+}
+
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+  vmprintwalk(pagetable, 1);
 }
