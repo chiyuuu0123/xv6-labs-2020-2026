@@ -41,14 +41,26 @@ sys_wait(void)
 uint64
 sys_sbrk(void)
 {
-  int addr;
+  uint64 addr;
   int n;
+  struct proc *p = myproc();
 
   if(argint(0, &n) < 0)
     return -1;
-  addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
+  addr = p->sz;
+
+  if(n < 0){
+    uint64 amount = (uint64)(-(long)n);
+    if(amount > p->sz)
+      return -1;
+    p->sz = uvmdealloc(p->pagetable, p->sz, p->sz - amount);
+  } else {
+    // 正向 sbrk 只扩大逻辑地址空间，物理页推迟到首次访问时分配。
+    uint64 newsz = p->sz + (uint64)n;
+    if(newsz < p->sz || newsz >= MAXVA)
+      return -1;
+    p->sz = newsz;
+  }
   return addr;
 }
 

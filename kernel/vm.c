@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -181,9 +183,9 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+      continue;
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -315,9 +317,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+      continue;
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -333,6 +335,45 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
  err:
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
+}
+
+// 为一个尚未映射的用户虚拟页按需分配零填充物理页。
+int
+lazyalloc(pagetable_t pagetable, uint64 va)
+{
+  char *mem;
+  pte_t *pte;
+
+  if(va >= MAXVA)
+    return -1;
+  va = PGROUNDDOWN(va);
+  pte = walk(pagetable, va, 0);
+  if(pte && (*pte & PTE_V))
+    return -1;
+
+  if((mem = kalloc()) == 0)
+    return -1;
+  memset(mem, 0, PGSIZE);
+  if(mappages(pagetable, va, PGSIZE, (uint64)mem,
+              PTE_R | PTE_W | PTE_U) < 0){
+    kfree(mem);
+    return -1;
+  }
+  return 0;
+}
+
+// copyin/copyout 由内核发起，不会产生可由 usertrap 捕获的用户页故障，
+// 因此在合法的懒分配区域内需要主动补页。
+static int
+ensure_user_page(pagetable_t pagetable, uint64 va)
+{
+  struct proc *p = myproc();
+
+  if(p == 0 || pagetable != p->pagetable)
+    return -1;
+  if(va >= p->sz || va < PGROUNDDOWN(p->trapframe->sp))
+    return -1;
+  return lazyalloc(pagetable, va);
 }
 
 // mark a PTE invalid for user access.
@@ -359,6 +400,8 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
+    if(pa0 == 0 && ensure_user_page(pagetable, va0) == 0)
+      pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
     n = PGSIZE - (dstva - va0);
@@ -384,6 +427,8 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
   while(len > 0){
     va0 = PGROUNDDOWN(srcva);
     pa0 = walkaddr(pagetable, va0);
+    if(pa0 == 0 && ensure_user_page(pagetable, va0) == 0)
+      pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
     n = PGSIZE - (srcva - va0);
@@ -411,6 +456,8 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   while(got_null == 0 && max > 0){
     va0 = PGROUNDDOWN(srcva);
     pa0 = walkaddr(pagetable, va0);
+    if(pa0 == 0 && ensure_user_page(pagetable, va0) == 0)
+      pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
     n = PGSIZE - (srcva - va0);
