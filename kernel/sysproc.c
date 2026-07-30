@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -94,4 +95,36 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_trace(void)
+{
+  int mask;
+
+  if(argint(0, &mask) < 0)
+    return -1;
+
+  // 掩码的第 n 位决定是否打印编号为 n 的系统调用。
+  myproc()->trace_mask = mask;
+  return 0;
+}
+
+uint64
+sys_sysinfo(void)
+{
+  uint64 user_addr;
+  struct sysinfo info;
+  struct proc *p = myproc();
+
+  if(argaddr(0, &user_addr) < 0)
+    return -1;
+
+  info.freemem = free_memory_bytes();
+  info.nproc = process_count();
+
+  // 内核不能直接解引用用户指针，必须通过当前进程页表安全复制。
+  if(copyout(p->pagetable, user_addr, (char *)&info, sizeof(info)) < 0)
+    return -1;
+  return 0;
 }

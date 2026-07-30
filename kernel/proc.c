@@ -106,6 +106,7 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
+  p->trace_mask = 0;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -149,6 +150,7 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  p->trace_mask = 0;
   p->state = UNUSED;
 }
 
@@ -280,6 +282,9 @@ fork(void)
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
+  // 跟踪设置属于进程状态，子进程应继承父进程当前的跟踪掩码。
+  np->trace_mask = p->trace_mask;
+
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
@@ -298,6 +303,22 @@ fork(void)
   release(&np->lock);
 
   return pid;
+}
+
+// 统计当前已占用的进程槽；读取状态时持有对应进程锁以避免并发变化。
+uint64
+process_count(void)
+{
+  uint64 count = 0;
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->state != UNUSED)
+      count++;
+    release(&p->lock);
+  }
+  return count;
 }
 
 // Pass p's abandoned children to init.

@@ -80,3 +80,18 @@ kalloc(void)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
 }
+
+// 在分配器锁保护下遍历空闲链表，返回尚未分配的物理内存字节数。
+uint64
+free_memory_bytes(void)
+{
+  uint64 pages = 0;
+  struct run *r;
+
+  acquire(&kmem.lock);
+  for(r = kmem.freelist; r; r = r->next)
+    pages++;
+  release(&kmem.lock);
+
+  return pages * PGSIZE;
+}
