@@ -400,6 +400,33 @@ bmap(struct inode *ip, uint bn)
     brelse(bp);
     return addr;
   }
+  bn -= NINDIRECT;
+
+  if(bn < NDINDIRECT){
+    uint first = bn / NINDIRECT;
+    uint second = bn % NINDIRECT;
+
+    // addrs[NDIRECT+1] 指向二级索引块，其每项再指向一个一级索引块。
+    if((addr = ip->addrs[NDIRECT+1]) == 0)
+      ip->addrs[NDIRECT+1] = addr = balloc(ip->dev);
+    bp = bread(ip->dev, addr);
+    a = (uint *)bp->data;
+    if(a[first] == 0){
+      a[first] = balloc(ip->dev);
+      log_write(bp);
+    }
+    addr = a[first];
+    brelse(bp);
+
+    bp = bread(ip->dev, addr);
+    a = (uint *)bp->data;
+    if((addr = a[second]) == 0){
+      a[second] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    return addr;
+  }
 
   panic("bmap: out of range");
 }
@@ -430,6 +457,27 @@ itrunc(struct inode *ip)
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
+  }
+
+  if(ip->addrs[NDIRECT+1]){
+    // 先释放每个一级索引块中的数据块，再释放一级索引块和最外层二级索引块。
+    bp = bread(ip->dev, ip->addrs[NDIRECT+1]);
+    a = (uint *)bp->data;
+    for(i = 0; i < NINDIRECT; i++){
+      if(a[i]){
+        struct buf *inner = bread(ip->dev, a[i]);
+        uint *data = (uint *)inner->data;
+        for(j = 0; j < NINDIRECT; j++){
+          if(data[j])
+            bfree(ip->dev, data[j]);
+        }
+        brelse(inner);
+        bfree(ip->dev, a[i]);
+      }
+    }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT+1]);
+    ip->addrs[NDIRECT+1] = 0;
   }
 
   ip->size = 0;
