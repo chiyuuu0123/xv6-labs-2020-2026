@@ -113,6 +113,7 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
+  memset(p->vmas, 0, sizeof(p->vmas));
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -156,6 +157,7 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  memset(p->vmas, 0, sizeof(p->vmas));
   p->state = UNUSED;
 }
 
@@ -294,6 +296,13 @@ fork(void)
   for(i = 0; i < NOFILE; i++)
     if(p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
+  // VMA 中的文件引用独立于文件描述符；即使 close(fd)，映射仍须有效。
+  for(i = 0; i < NVMA; i++){
+    if(p->vmas[i].valid){
+      np->vmas[i] = p->vmas[i];
+      np->vmas[i].file = filedup(p->vmas[i].file);
+    }
+  }
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
@@ -343,6 +352,9 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
+
+  // 退出等价于解除全部映射：共享映射先回写，再释放页面和文件引用。
+  vmaunmapall(p);
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){

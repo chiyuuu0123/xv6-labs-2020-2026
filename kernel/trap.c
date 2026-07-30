@@ -65,6 +65,9 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if((r_scause() == 13 || r_scause() == 15) &&
+            mmapfault(r_stval()) == 0){
+    // mmap 采用懒加载：读/写缺页时才建立该文件页的映射。
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
@@ -217,4 +220,3 @@ devintr()
     return 0;
   }
 }
-

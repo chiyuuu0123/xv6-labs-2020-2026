@@ -6,6 +6,7 @@
 
 #include "types.h"
 #include "riscv.h"
+#include "memlayout.h"
 #include "defs.h"
 #include "param.h"
 #include "stat.h"
@@ -102,6 +103,185 @@ sys_close(void)
   myproc()->ofile[fd] = 0;
   fileclose(f);
   return 0;
+}
+
+// 在 vma 内解除一段连续映射。实验保证只从区域头部、尾部或整体解除。
+static int
+vmaunmap(struct proc *p, uint64 addr, uint64 length)
+{
+  struct vma *v = 0;
+  uint64 end;
+
+  if(length == 0 || addr % PGSIZE)
+    return -1;
+  length = PGROUNDUP(length);
+  if(addr + length < addr)
+    return -1;
+  end = addr + length;
+
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].valid &&
+       addr >= p->vmas[i].addr &&
+       end <= p->vmas[i].addr + p->vmas[i].length){
+      v = &p->vmas[i];
+      break;
+    }
+  }
+  if(v == 0)
+    return -1;
+  if(addr != v->addr && end != v->addr + v->length)
+    return -1;
+
+  for(uint64 a = addr; a < end; a += PGSIZE){
+    uint64 pa = walkaddr(p->pagetable, a);
+    if(pa == 0)
+      continue; // 从未访问过的懒加载页没有物理页可释放。
+
+    if(v->flags == MAP_SHARED && (v->prot & PROT_WRITE)){
+      // writei 的源地址位于内核，因此 user_src 参数取 0。
+      begin_op();
+      ilock(v->file->ip);
+      int n = writei(v->file->ip, 0, pa,
+                     v->offset + (a - v->addr), PGSIZE);
+      iunlock(v->file->ip);
+      end_op();
+      if(n < 0)
+        return -1;
+    }
+    uvmunmap(p->pagetable, a, 1, 1);
+  }
+
+  if(addr == v->addr && length == v->length){
+    struct file *f = v->file;
+    memset(v, 0, sizeof(*v));
+    fileclose(f);
+  } else if(addr == v->addr){
+    v->addr += length;
+    v->length -= length;
+    v->offset += length;
+  } else {
+    v->length -= length;
+  }
+  return 0;
+}
+
+uint64
+sys_mmap(void)
+{
+  uint64 requested;
+  int length, prot, flags, fd, offset;
+  struct file *f;
+  struct proc *p = myproc();
+  struct vma *freev = 0;
+  uint64 top = TRAPFRAME;
+
+  if(argaddr(0, &requested) < 0 ||
+     argint(1, &length) < 0 ||
+     argint(2, &prot) < 0 ||
+     argint(3, &flags) < 0 ||
+     argint(4, &fd) < 0 ||
+     argint(5, &offset) < 0)
+    return -1;
+  if(requested != 0 || length <= 0 || offset != 0 ||
+     (flags != MAP_SHARED && flags != MAP_PRIVATE) ||
+     (prot & ~(PROT_READ | PROT_WRITE | PROT_EXEC)) != 0 ||
+     fd < 0 || fd >= NOFILE || (f = p->ofile[fd]) == 0 ||
+     f->type != FD_INODE || !f->readable)
+    return -1;
+  if(flags == MAP_SHARED && (prot & PROT_WRITE) && !f->writable)
+    return -1;
+
+  for(int i = 0; i < NVMA; i++){
+    if(!p->vmas[i].valid && freev == 0)
+      freev = &p->vmas[i];
+    if(p->vmas[i].valid && p->vmas[i].addr < top)
+      top = p->vmas[i].addr;
+  }
+  uint64 maplen = PGROUNDUP((uint64)length);
+  if(freev == 0 || maplen > top ||
+     PGROUNDDOWN(top - maplen) < PGROUNDUP(p->sz))
+    return -1;
+
+  // 从高地址向下放置 VMA，避免改变 p->sz 和普通堆区。
+  freev->valid = 1;
+  freev->addr = PGROUNDDOWN(top - maplen);
+  freev->length = maplen;
+  freev->prot = prot;
+  freev->flags = flags;
+  freev->offset = offset;
+  freev->file = filedup(f);
+  return freev->addr;
+}
+
+uint64
+sys_munmap(void)
+{
+  uint64 addr;
+  int length;
+
+  if(argaddr(0, &addr) < 0 || argint(1, &length) < 0 || length <= 0)
+    return -1;
+  return vmaunmap(myproc(), addr, length);
+}
+
+// 处理 mmap 区域的首次访问：分配清零页、读取文件、再设置用户权限。
+int
+mmapfault(uint64 faultaddr)
+{
+  struct proc *p = myproc();
+  struct vma *v = 0;
+
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].valid &&
+       faultaddr >= p->vmas[i].addr &&
+       faultaddr < p->vmas[i].addr + p->vmas[i].length){
+      v = &p->vmas[i];
+      break;
+    }
+  }
+  if(v == 0)
+    return -1;
+
+  uint64 va = PGROUNDDOWN(faultaddr);
+  if(walkaddr(p->pagetable, va) != 0)
+    return -1; // 已映射页再次出错，通常是违反只读权限。
+
+  char *mem = kalloc();
+  if(mem == 0)
+    return -1;
+  memset(mem, 0, PGSIZE);
+
+  ilock(v->file->ip);
+  int n = readi(v->file->ip, 0, (uint64)mem,
+                v->offset + (va - v->addr), PGSIZE);
+  iunlock(v->file->ip);
+  if(n < 0){
+    kfree(mem);
+    return -1;
+  }
+
+  int perm = PTE_U;
+  // RISC-V 中可写叶子页必须同时可读，因此 PROT_WRITE 也设置 PTE_R。
+  if(v->prot & (PROT_READ | PROT_WRITE))
+    perm |= PTE_R;
+  if(v->prot & PROT_WRITE)
+    perm |= PTE_W;
+  if(v->prot & PROT_EXEC)
+    perm |= PTE_X;
+  if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, perm) < 0){
+    kfree(mem);
+    return -1;
+  }
+  return 0;
+}
+
+void
+vmaunmapall(struct proc *p)
+{
+  for(int i = 0; i < NVMA; i++){
+    if(p->vmas[i].valid)
+      vmaunmap(p, p->vmas[i].addr, p->vmas[i].length);
+  }
 }
 
 uint64
