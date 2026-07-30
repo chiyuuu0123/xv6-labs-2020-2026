@@ -60,6 +60,7 @@ sys_sleep(void)
 
   if(argint(0, &n) < 0)
     return -1;
+  backtrace();
   acquire(&tickslock);
   ticks0 = ticks;
   while(ticks - ticks0 < n){
@@ -94,4 +95,34 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_sigalarm(void)
+{
+  int interval;
+  uint64 handler;
+  struct proc *p = myproc();
+
+  if(argint(0, &interval) < 0 || argaddr(1, &handler) < 0 || interval < 0)
+    return -1;
+
+  p->alarm_interval = interval;
+  p->alarm_handler = handler;
+  p->alarm_elapsed = 0;
+  return 0;
+}
+
+uint64
+sys_sigreturn(void)
+{
+  struct proc *p = myproc();
+
+  // 恢复闹钟打断前的全部用户寄存器，使程序从原指令位置无感继续。
+  memmove(p->trapframe, &p->alarm_saved, sizeof(struct trapframe));
+  p->alarm_active = 0;
+  p->alarm_elapsed = 0;
+
+  // syscall() 随后会把返回值写入 a0，因此返回保存的 a0 才不会破坏现场。
+  return p->trapframe->a0;
 }

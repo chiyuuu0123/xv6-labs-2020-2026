@@ -103,4 +103,9 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  int alarm_interval;          // 两次用户闹钟之间需要消耗的 CPU tick
+  int alarm_elapsed;           // 自上次触发后累计的 CPU tick
+  uint64 alarm_handler;        // 用户态处理函数入口地址
+  int alarm_active;            // 处理函数尚未 sigreturn，禁止重入
+  struct trapframe alarm_saved;// 闹钟触发前的完整用户寄存器现场
 };

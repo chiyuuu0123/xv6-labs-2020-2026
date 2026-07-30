@@ -115,12 +115,33 @@ printf(char *fmt, ...)
 }
 
 void
+backtrace(void)
+{
+  uint64 fp = r_fp();
+  uint64 stack_top = PGROUNDUP(fp);
+
+  printf("backtrace:\n");
+  while(fp < stack_top){
+    // RISC-V GCC 栈帧中，返回地址和上一帧指针分别位于 fp-8、fp-16。
+    uint64 ra = *(uint64 *)(fp - 8);
+    uint64 previous_fp = *(uint64 *)(fp - 16);
+    printf("%p\n", ra);
+
+    // 防止损坏的栈帧形成死循环或越过本进程的一页内核栈。
+    if(previous_fp <= fp || previous_fp > stack_top)
+      break;
+    fp = previous_fp;
+  }
+}
+
+void
 panic(char *s)
 {
   pr.locking = 0;
   printf("panic: ");
   printf(s);
   printf("\n");
+  backtrace();
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;

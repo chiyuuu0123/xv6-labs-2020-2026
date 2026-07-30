@@ -76,6 +76,17 @@ usertrap(void)
   if(p->killed)
     exit(-1);
 
+  if(which_dev == 2 && p->alarm_interval > 0 && !p->alarm_active){
+    p->alarm_elapsed++;
+    if(p->alarm_elapsed >= p->alarm_interval){
+      // 保存完整 trapframe，再把返回用户态的 PC 改为处理函数入口。
+      memmove(&p->alarm_saved, p->trapframe, sizeof(struct trapframe));
+      p->trapframe->epc = p->alarm_handler;
+      p->alarm_elapsed = 0;
+      p->alarm_active = 1;
+    }
+  }
+
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
     yield();
@@ -217,4 +228,3 @@ devintr()
     return 0;
   }
 }
-
