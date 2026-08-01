@@ -43,6 +43,7 @@ insert_into_bucket(int bucket, struct buf *b)
   head->next = b;
 }
 
+// 初始化哈希桶、桶锁和全局换出锁，并为每个缓冲区建立初始缓存身份。
 void
 binit(void)
 {
@@ -68,6 +69,7 @@ binit(void)
 }
 
 // Return a sleep-locked buffer for (dev, blockno).
+// 命中路径只获取目标桶锁；未命中路径由 evict_lock 保证缓存身份唯一。
 static struct buf*
 bget(uint dev, uint blockno)
 {
@@ -173,6 +175,7 @@ bwrite(struct buf *b)
   virtio_disk_rw(b, 1);
 }
 
+// 释放使用引用；引用降为零时更新时间戳，供后续换出选择最旧缓冲区。
 void
 brelse(struct buf *b)
 {

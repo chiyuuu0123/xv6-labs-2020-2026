@@ -44,6 +44,7 @@ freerange(void *pa_start, void *pa_end)
 // which normally should have been returned by a
 // call to kalloc().  (The exception is when
 // initializing the allocator; see kinit above.)
+// 把物理页放回当前 CPU 的本地空闲链表，减少不同 CPU 对同一把锁的竞争。
 void
 kfree(void *pa)
 {
@@ -70,6 +71,7 @@ kfree(void *pa)
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.
 // Returns 0 if the memory cannot be allocated.
+// 优先从本地 freelist 分配；耗尽时再从其他 CPU 批量转移页面。
 void *
 kalloc(void)
 {
