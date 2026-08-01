@@ -97,6 +97,7 @@ sys_uptime(void)
   return xticks;
 }
 
+// 保存告警周期与用户处理函数入口；周期为零时相当于关闭告警。
 uint64
 sys_sigalarm(void)
 {
@@ -113,6 +114,7 @@ sys_sigalarm(void)
   return 0;
 }
 
+// 从告警处理函数返回时恢复完整用户现场，并解除防重入标记。
 uint64
 sys_sigreturn(void)
 {

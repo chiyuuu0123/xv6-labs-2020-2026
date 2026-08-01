@@ -33,6 +33,7 @@ trapinithart(void)
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
 //
+// 统一处理用户态系统调用、设备中断和异常，并在时钟中断中调度用户告警。
 void
 usertrap(void)
 {
@@ -76,6 +77,7 @@ usertrap(void)
   if(p->killed)
     exit(-1);
 
+  // 仅在时钟中断且处理函数未运行时累计周期，避免慢处理函数发生嵌套重入。
   if(which_dev == 2 && p->alarm_interval > 0 && !p->alarm_active){
     p->alarm_elapsed++;
     if(p->alarm_elapsed >= p->alarm_interval){

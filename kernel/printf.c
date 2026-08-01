@@ -114,6 +114,7 @@ printf(char *fmt, ...)
     release(&pr.lock);
 }
 
+// 沿帧指针链输出返回地址，并用当前内核栈页边界防止越界或死循环。
 void
 backtrace(void)
 {
