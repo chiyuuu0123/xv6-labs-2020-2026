@@ -172,6 +172,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.
+// 解除映射时允许跳过尚未实际分配的空洞，这是稀疏页表的正常状态。
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
@@ -307,6 +308,7 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // physical memory.
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
+// fork 只复制已经存在的用户页，未触碰的懒分配空洞继续保持为空。
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
@@ -392,6 +394,7 @@ uvmclear(pagetable_t pagetable, uint64 va)
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
+// 内核向用户缓冲区写入前主动补齐合法懒分配页，因为该路径不会进入 usertrap。
 int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {

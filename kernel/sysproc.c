@@ -38,6 +38,7 @@ sys_wait(void)
   return wait(p);
 }
 
+// 调整进程的逻辑地址空间大小：增长时延迟分配，收缩时立即释放已有映射。
 uint64
 sys_sbrk(void)
 {

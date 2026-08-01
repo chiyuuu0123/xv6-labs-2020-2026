@@ -33,6 +33,7 @@ trapinithart(void)
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
 //
+// 将合法的 load/store page fault 转换为按需分配，其余异常仍按错误处理。
 void
 usertrap(void)
 {
