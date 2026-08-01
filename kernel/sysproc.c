@@ -97,6 +97,7 @@ sys_uptime(void)
   return xticks;
 }
 
+// trace 系统调用只更新当前进程的掩码，真正的输出由统一分派入口完成。
 uint64
 sys_trace(void)
 {
@@ -110,6 +111,7 @@ sys_trace(void)
   return 0;
 }
 
+// 汇总空闲内存与活动进程数，并通过 copyout 安全返回用户空间。
 uint64
 sys_sysinfo(void)
 {

@@ -160,6 +160,7 @@ static char *syscall_names[] = {
 [SYS_sysinfo] "sysinfo",
 };
 
+// 从 trapframe 的 a7 取得调用号，执行对应内核函数，并按进程掩码输出跟踪结果。
 void
 syscall(void)
 {
