@@ -92,6 +92,7 @@ e1000_init(uint32 *xregs)
   regs[E1000_IMS] = (1 << 7); // RXDW -- Receiver Descriptor Write Back
 }
 
+// 把 mbuf 挂入当前发送描述符；只有 DD 置位后才能回收该槽位的旧缓冲区。
 int
 e1000_transmit(struct mbuf *m)
 {
@@ -126,6 +127,7 @@ e1000_transmit(struct mbuf *m)
   return 0;
 }
 
+// 逐个取出已完成的接收描述符，先补充新缓冲区，再在锁外把报文交给协议栈。
 static void
 e1000_recv(void)
 {
@@ -163,12 +165,11 @@ e1000_recv(void)
   }
 }
 
+// 确认设备中断后处理接收环，使网卡能够继续产生后续中断。
 void
 e1000_intr(void)
 {
-  // tell the e1000 we've seen this interrupt;
-  // without this the e1000 won't raise any
-  // further interrupts.
+  // 写 ICR 确认本次中断；若不确认，设备不会继续上报后续中断。
   regs[E1000_ICR] = 0xffffffff;
 
   e1000_recv();
