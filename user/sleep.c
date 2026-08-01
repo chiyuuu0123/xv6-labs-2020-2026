@@ -2,6 +2,7 @@
 #include "kernel/stat.h"
 #include "user/user.h"
 
+// 用户程序入口：校验参数后调用 xv6 的 sleep 系统调用，让进程休眠指定滴答数。
 int
 main(int argc, char *argv[])
 {

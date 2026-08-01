@@ -4,6 +4,7 @@
 #include "user/user.h"
 #include "kernel/fcntl.h"
 
+// 返回路径最后一个分量的起始位置，用于与目标文件名比较。
 static char *
 base_name(char *path)
 {
@@ -13,6 +14,7 @@ base_name(char *path)
   return p;
 }
 
+// 递归遍历目录树；文件直接比较名称，目录则逐项拼接子路径后继续查找。
 static void
 find(char *path, char *target)
 {
@@ -54,6 +56,7 @@ find(char *path, char *target)
   p = buf + strlen(buf);
   *p++ = '/';
 
+  // xv6 目录文件由定长 dirent 连续组成，因此按结构体大小逐项读取。
   while(read(fd, &de, sizeof(de)) == sizeof(de)){
     if(de.inum == 0)
       continue;

@@ -2,6 +2,7 @@
 #include "kernel/stat.h"
 #include "user/user.h"
 
+// 使用两条单向管道完成父子进程的一次往返通信，并显式关闭不再使用的端点。
 int
 main(int argc, char *argv[])
 {

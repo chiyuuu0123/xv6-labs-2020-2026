@@ -158,13 +158,14 @@ w_mideleg(uint64 x)
   asm volatile("csrw mideleg, %0" : : "r" (x));
 }
 
-// Physical Memory Protection
+// 写入物理内存保护配置寄存器，允许 S 模式访问指定物理地址范围。
 static inline void
 w_pmpcfg0(uint64 x)
 {
   asm volatile("csrw pmpcfg0, %0" : : "r" (x));
 }
 
+// 写入第 0 个 PMP 地址寄存器，配合 pmpcfg0 描述可访问的物理内存上界。
 static inline void
 w_pmpaddr0(uint64 x)
 {

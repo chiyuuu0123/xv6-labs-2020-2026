@@ -5,6 +5,7 @@
 
 #define LINE_SIZE 512
 
+// 把一行标准输入拆分为附加参数，随后 fork 子进程执行目标命令。
 static int
 run_line(char *line, int length, char **args, int fixed_argc)
 {
@@ -67,6 +68,7 @@ main(int argc, char *argv[])
   for(int i = 1; i < argc; i++)
     args[fixed_argc++] = argv[i];
 
+  // 逐字节读取便于同时处理换行、超长输入以及末行没有换行符的情况。
   char line[LINE_SIZE + 1];
   int length = 0;
   char ch;

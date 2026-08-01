@@ -16,7 +16,7 @@ uint64 mscratch0[NCPU * 32];
 // assembly code in kernelvec.S for machine-mode timer interrupt.
 extern void timervec();
 
-// entry.S jumps here in machine mode on stack0.
+// entry.S 在机器态跳转到此处：配置特权级、异常委托、PMP 和时钟后进入内核 main。
 void
 start()
 {
@@ -38,8 +38,7 @@ start()
   w_mideleg(0xffff);
   w_sie(r_sie() | SIE_SEIE | SIE_STIE | SIE_SSIE);
 
-  // Configure Physical Memory Protection to give supervisor mode
-  // access to all of physical memory. Newer QEMU versions enforce PMP.
+  // 新版 QEMU 会执行 PMP 检查，因此显式允许 S 模式访问全部物理内存。
   w_pmpaddr0(0x3fffffffffffffull);
   w_pmpcfg0(0xf);
 

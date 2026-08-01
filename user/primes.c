@@ -2,7 +2,7 @@
 #include "kernel/stat.h"
 #include "user/user.h"
 
-// 每一级筛选进程从左侧管道取得本级素数，再把不能整除的数传给右侧。
+// 每一级筛选进程从左侧管道取得本级素数，并把不能整除的数传给下一级进程。
 static void
 sieve(int read_fd)
 {
@@ -59,6 +59,7 @@ main(int argc, char *argv[])
     exit(1);
   }
 
+  // 主进程只负责生成 2～35，真正的筛选工作由后续进程链完成。
   int first_pipe[2];
   if(pipe(first_pipe) < 0){
     fprintf(2, "primes: pipe failed\n");
