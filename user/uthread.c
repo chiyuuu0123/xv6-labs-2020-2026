@@ -39,21 +39,19 @@ extern void thread_switch(uint64, uint64);
 void 
 thread_init(void)
 {
-  // main() is thread 0, which will make the first invocation to
-  // thread_schedule().  it needs a stack so that the first thread_switch() can
-  // save thread 0's state.  thread_schedule() won't run the main thread ever
-  // again, because its state is set to RUNNING, and thread_schedule() selects
-  // a RUNNABLE thread.
+  // main 作为 0 号线程发起第一次调度；切换时先把它的寄存器保存到 context。
+  // 调度器只选择 RUNNABLE 线程，因此 0 号线程完成首次切出后不会再次被选中。
   current_thread = &all_thread[0];
   current_thread->state = RUNNING;
 }
 
+// 采用循环扫描选择下一个可运行线程，再由汇编例程保存旧上下文并恢复新上下文。
 void 
 thread_schedule(void)
 {
   struct thread *t, *next_thread;
 
-  /* Find another runnable thread. */
+  /* 从当前线程的下一个槽位开始循环查找可运行线程。 */
   next_thread = 0;
   t = current_thread + 1;
   for(int i = 0; i < MAX_THREAD; i++){
@@ -71,7 +69,7 @@ thread_schedule(void)
     exit(-1);
   }
 
-  if (current_thread != next_thread) {         /* switch threads?  */
+  if (current_thread != next_thread) {         /* 仅在线程发生变化时切换上下文。 */
     next_thread->state = RUNNING;
     t = current_thread;
     current_thread = next_thread;
@@ -80,6 +78,7 @@ thread_schedule(void)
     next_thread = 0;
 }
 
+// 为新线程构造首次运行所需的 ra 与 sp；其余被调用者寄存器清零。
 void 
 thread_create(void (*func)())
 {

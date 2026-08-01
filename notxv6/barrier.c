@@ -22,6 +22,7 @@ barrier_init(void)
   bstate.round = 0;
 }
 
+// 每个线程登记到达；最后到达者推进轮次并唤醒同一轮的全部等待者。
 static void 
 barrier()
 {

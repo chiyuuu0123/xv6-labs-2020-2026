@@ -36,6 +36,7 @@ insert(int key, int value, struct entry **p, struct entry *n)
   *p = e;
 }
 
+// 在目标桶锁保护下完成“查找并更新或插入”，避免两个线程覆盖链表头。
 static 
 void put(int key, int value)
 {
@@ -43,17 +44,17 @@ void put(int key, int value)
 
   // 每个桶使用独立互斥锁：同桶修改串行，不同桶的 put 可以并行。
   pthread_mutex_lock(&bucket_locks[i]);
-  // is the key already present?
+  // 先检查键是否已存在，使查找与修改处于同一个临界区。
   struct entry *e = 0;
   for (e = table[i]; e != 0; e = e->next) {
     if (e->key == key)
       break;
   }
   if(e){
-    // update the existing key.
+    // 已存在时只更新值。
     e->value = value;
   } else {
-    // the new is new.
+    // 不存在时把新节点插入桶链表头部。
     insert(key, value, &table[i], table[i]);
   }
   pthread_mutex_unlock(&bucket_locks[i]);
@@ -64,6 +65,7 @@ get(int key)
 {
   int i = key % NBUCKET;
 
+  // 读取链表期间同样持桶锁，防止与并发插入交错。
   pthread_mutex_lock(&bucket_locks[i]);
   struct entry *e = 0;
   for (e = table[i]; e != 0; e = e->next) {
@@ -77,7 +79,7 @@ get(int key)
 static void *
 put_thread(void *xa)
 {
-  int n = (int) (long) xa; // thread number
+  int n = (int) (long) xa; // 当前线程编号
   int b = NKEYS/nthread;
 
   for (int i = 0; i < b; i++) {
@@ -90,7 +92,7 @@ put_thread(void *xa)
 static void *
 get_thread(void *xa)
 {
-  int n = (int) (long) xa; // thread number
+  int n = (int) (long) xa; // 当前线程编号
   int missing = 0;
 
   for (int i = 0; i < NKEYS; i++) {
@@ -122,9 +124,7 @@ main(int argc, char *argv[])
   for(int i = 0; i < NBUCKET; i++)
     assert(pthread_mutex_init(&bucket_locks[i], NULL) == 0);
 
-  //
-  // first the puts
-  //
+  // 第一阶段由多个线程并发写入哈希表。
   t0 = now();
   for(int i = 0; i < nthread; i++) {
     assert(pthread_create(&tha[i], NULL, put_thread, (void *) (long) i) == 0);

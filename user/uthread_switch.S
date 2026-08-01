@@ -1,9 +1,6 @@
 	.text
 
-	/*
-         * save the old thread's registers,
-         * restore the new thread's registers.
-         */
+	/* 保存旧线程的被调用者寄存器，再恢复新线程的对应寄存器。 */
 
 	.globl thread_switch
 thread_switch:
@@ -38,4 +35,4 @@ thread_switch:
 	ld s9, 88(a1)
 	ld s10, 96(a1)
 	ld s11, 104(a1)
-	ret    /* return to ra */
+	ret    /* 返回到新上下文中 ra 指定的位置。 */
