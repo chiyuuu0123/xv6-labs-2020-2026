@@ -79,6 +79,7 @@ allocpid() {
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
 // If there are no free procs, or a memory allocation fails, return 0.
+// 分配进程槽的同时建立私有内核页表和独立内核栈，任何失败都走对称回滚路径。
 static struct proc*
 allocproc(void)
 {
@@ -150,6 +151,7 @@ found:
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
+// 释放用户页表、私有内核页表和内核栈，并把进程槽恢复为 UNUSED。
 static void
 freeproc(struct proc *p)
 {
@@ -262,6 +264,7 @@ userinit(void)
 
 // Grow or shrink user memory by n bytes.
 // Return 0 on success, -1 on failure.
+// 用户地址空间增长或收缩时，同步维护私有内核页表中的用户页别名。
 int
 growproc(int n)
 {
@@ -497,6 +500,7 @@ wait(uint64 addr)
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
+// 调度到进程前切换 satp 到其私有内核页表，返回调度器后恢复全局页表并刷新 TLB。
 void
 scheduler(void)
 {

@@ -20,6 +20,7 @@ extern char trampoline[]; // trampoline.S
 /*
  * create a direct-map page table for the kernel.
  */
+// 为进程构造基础内核映射；调用者再补充该进程独有的内核栈和用户页别名。
 pagetable_t
 kvmmake(void)
 {
@@ -155,6 +156,7 @@ kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
 // a physical address. only needed for
 // addresses on the stack.
 // assumes va is page aligned.
+// 根据当前执行上下文选择私有或全局内核页表，再完成虚拟地址到物理地址的转换。
 uint64
 kvmpa(uint64 va)
 {
@@ -451,6 +453,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 // Copy from user to kernel.
 // Copy len bytes to dst from virtual address srcva in a given page table.
 // Return 0 on success, -1 on error.
+// 用户页已在私有内核页表中建立别名，因此可复用硬件页表翻译完成复制。
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
@@ -462,12 +465,14 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 // Copy bytes to dst from virtual address srcva in a given page table,
 // until a '\0', or max.
 // Return 0 on success, -1 on error.
+// 与 copyin 相同，但在遇到字符串结束符或达到最大长度时停止。
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
   return copyinstr_new(pagetable, dst, srcva, max);
 }
 
+// 深度优先遍历 Sv39 页表；只有无 R/W/X 权限的有效项才指向下一级页表。
 static void
 vmprintwalk(pagetable_t pagetable, int depth)
 {
@@ -486,6 +491,7 @@ vmprintwalk(pagetable_t pagetable, int depth)
   }
 }
 
+// 打印页表根地址，并从第一级缩进开始递归输出所有有效映射。
 void
 vmprint(pagetable_t pagetable)
 {
