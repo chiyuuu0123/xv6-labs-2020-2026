@@ -33,6 +33,7 @@ trapinithart(void)
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
 //
+// 把 mmap 区域的首次读写缺页交给 mmapfault，其余 trap 仍走原有处理路径。
 void
 usertrap(void)
 {

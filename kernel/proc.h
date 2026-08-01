@@ -86,13 +86,13 @@ enum procstate { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 // 虚拟内存区域：只记录映射关系，物理页在首次访问时按需分配。
 struct vma {
-  int valid;
-  uint64 addr;
-  uint64 length;
-  int prot;
-  int flags;
-  uint64 offset;
-  struct file *file;
+  int valid;          // 该槽位是否正在使用
+  uint64 addr;        // 映射起始虚拟地址
+  uint64 length;      // 映射长度，按页向上取整
+  int prot;           // 用户页读、写、执行权限
+  int flags;          // MAP_SHARED 或 MAP_PRIVATE
+  uint64 offset;      // 映射起点对应的文件偏移
+  struct file *file;  // 持有引用的后端文件
 };
 
 // Per-process state

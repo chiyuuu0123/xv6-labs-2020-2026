@@ -165,6 +165,7 @@ vmaunmap(struct proc *p, uint64 addr, uint64 length)
   return 0;
 }
 
+// 校验文件与权限后从高地址向下选择空闲区间，只登记 VMA 而不立即分配物理页。
 uint64
 sys_mmap(void)
 {
@@ -213,6 +214,7 @@ sys_mmap(void)
   return freev->addr;
 }
 
+// 解除指定映射范围；共享可写页在释放前按原文件偏移回写。
 uint64
 sys_munmap(void)
 {
@@ -275,6 +277,7 @@ mmapfault(uint64 faultaddr)
   return 0;
 }
 
+// 进程退出时释放全部 VMA，完成必要回写并归还持有的文件引用。
 void
 vmaunmapall(struct proc *p)
 {
