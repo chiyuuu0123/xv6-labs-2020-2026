@@ -24,6 +24,7 @@ struct superblock {
 
 #define FSMAGIC 0x10203040
 
+// 保留 11 个直接块槽，另外两个槽分别保存一级与二级间接块地址。
 #define NDIRECT 11
 #define NINDIRECT (BSIZE / sizeof(uint))
 #define NDINDIRECT (NINDIRECT * NINDIRECT)
@@ -36,7 +37,7 @@ struct dinode {
   short minor;          // Minor device number (T_DEVICE only)
   short nlink;          // Number of links to inode in file system
   uint size;            // Size of file (bytes)
-  uint addrs[NDIRECT+2];   // direct, single-indirect, double-indirect
+  uint addrs[NDIRECT+2];   // 直接块、一级间接块、二级间接块
 };
 
 // Inodes per block.

@@ -283,6 +283,7 @@ create(char *path, short type, short major, short minor)
   return ip;
 }
 
+// 打开文件时默认逐层解析符号链接；O_NOFOLLOW 则返回链接 inode 本身。
 uint64
 sys_open(void)
 {
@@ -310,6 +311,7 @@ sys_open(void)
     }
     ilock(ip);
 
+    // 限制最大跟随深度，避免循环符号链接导致内核无限解析。
     if(!(omode & O_NOFOLLOW)){
       for(int depth = 0; ip->type == T_SYMLINK; depth++){
         if(depth >= 10){
@@ -379,6 +381,7 @@ sys_open(void)
   return fd;
 }
 
+// 创建 T_SYMLINK inode，并把目标路径字符串作为链接文件的数据保存。
 uint64
 sys_symlink(void)
 {

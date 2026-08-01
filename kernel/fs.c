@@ -374,6 +374,7 @@ iunlockput(struct inode *ip)
 
 // Return the disk block address of the nth block in inode ip.
 // If there is no such block, bmap allocates one.
+// 按逻辑块号依次查询直接、一级间接和二级间接索引，缺失时在日志事务中分配。
 static uint
 bmap(struct inode *ip, uint bn)
 {
@@ -433,6 +434,7 @@ bmap(struct inode *ip, uint bn)
 
 // Truncate inode (discard contents).
 // Caller must hold ip->lock.
+// 按与 bmap 相反的层次释放数据块和索引块，保证截断后不泄漏磁盘空间。
 void
 itrunc(struct inode *ip)
 {
