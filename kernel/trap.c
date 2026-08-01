@@ -33,6 +33,7 @@ trapinithart(void)
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
 //
+// 在用户态 store page fault 中识别 COW 页，并把失败限制为终止当前进程。
 void
 usertrap(void)
 {

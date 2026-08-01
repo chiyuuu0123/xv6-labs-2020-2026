@@ -305,6 +305,7 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // physical memory.
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
+// fork 时父子页表共享物理页；原可写页改为只读 COW，并增加物理页引用计数。
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
@@ -392,6 +393,7 @@ uvmclear(pagetable_t pagetable, uint64 va)
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
+// 内核 copyout 同样可能写入 COW 页，写入前必须先取得当前进程的可写副本。
 int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {

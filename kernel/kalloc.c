@@ -55,6 +55,7 @@ freerange(void *pa_start, void *pa_end)
 // which normally should have been returned by a
 // call to kalloc().  (The exception is when
 // initializing the allocator; see kinit above.)
+// 先递减物理页引用计数，只有最后一个使用者释放后才真正回收到 freelist。
 void
 kfree(void *pa)
 {
@@ -85,6 +86,7 @@ kfree(void *pa)
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.
 // Returns 0 if the memory cannot be allocated.
+// 从空闲链表取页时把引用计数初始化为 1，表示分配者持有唯一引用。
 void *
 kalloc(void)
 {
@@ -103,6 +105,7 @@ kalloc(void)
   return (void*)r;
 }
 
+// 新增共享映射时增加引用计数，计数操作由 kmem.lock 串行保护。
 void
 krefinc(uint64 pa)
 {
@@ -116,6 +119,7 @@ krefinc(uint64 pa)
   release(&kmem.lock);
 }
 
+// 返回指定物理页当前的共享引用数，供 COW 快路径判断是否需要复制。
 int
 krefcount(uint64 pa)
 {
