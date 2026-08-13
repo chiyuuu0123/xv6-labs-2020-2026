@@ -1,6 +1,6 @@
 # xv6-labs-2020-2026
 
-本仓库保存 MIT 6.S081 2020 版 xv6 Labs 的课程设计实现。各 Lab 使用独立分支，源码中的自主实现与重点修改位置已补充适量中文注释，便于复习、实验报告撰写和答辩演示。
+本仓库保存 MIT 6.S081 2020 版 xv6 Labs 的课程设计实现。
 
 - 课程资源：[MIT 6.S081 2020 xv6](https://pdos.csail.mit.edu/6.828/2020/xv6.html)
 - 实验范围：Tools、Guidance、Lab Utilities 至 Lab Networking
